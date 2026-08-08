@@ -6,10 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY target.c .
-COPY entrypoint.sh .
-
 RUN gcc -no-pie -g -fno-omit-frame-pointer -O0 -Wall \
-        -o target target.c \
-    && chmod +x entrypoint.sh
+        -o target target.c
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/target"]
