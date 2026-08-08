@@ -12,7 +12,7 @@
 #include <sys/user.h>
 #include <signal.h>
 
-#include <vendor/vector.h>
+#include <vector.h>
 
 #include "observer/observer.h"
 
