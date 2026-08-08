@@ -8,12 +8,13 @@
 
 #include "vendor/vector.h"
 
-#define OPTSTR "t:p:h"
+#define OPTSTR "t:p:l:h"
 #define MAX_COMMAND_LEN 1024
 
 static const struct option long_options[] = {
     {"target",  required_argument, NULL, 't'},
     {"profile", required_argument, NULL, 'p'},
+    {"log",     required_argument, NULL, 'l'},
     {"help",    no_argument,       NULL, 'h'},
     {NULL,      0,                 NULL,  0 }
 };
@@ -23,6 +24,7 @@ static char **split_command(const char *cmd);
 int main(int argc, char *argv[], char *envp[]) {
     char *target_binary = NULL;
     char *json_profile = NULL;
+    char *logfile = NULL;
     int opt;
 
     while ((opt = getopt_long(argc, argv, OPTSTR, long_options, NULL)) != -1) {
@@ -42,11 +44,20 @@ int main(int argc, char *argv[], char *envp[]) {
                 }
                 json_profile = optarg;
                 break;
-                
+
+            case 'l':
+                if(logfile) {
+                    fprintf(stderr, "Invalid command line arguments, please specify only a single file for logs.\n");
+                    exit(EXIT_FAILURE);
+                }
+                logfile = optarg;
+                break;    
+
             case 'h':
-                printf("Usage: %s --target <shell command> --profile <path>\n", argv[0]);
+                printf("Usage: %s --target <shell command> --profile <path> --log <path>\n", argv[0]);
                 printf("  -t, --target   Shell command to run test binary\n");
                 printf("  -p, --profile  Path to JSON seccomp configuration file\n");
+                printf("  -l, --log      Path to file for JSON logs\n");
                 exit(EXIT_SUCCESS);
                 
             default:
@@ -62,8 +73,8 @@ int main(int argc, char *argv[], char *envp[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (!target_binary || !json_profile) {
-        fprintf(stderr, "Error: Both --target (-t) and --profile (-p) are required.\n");
+    if (!target_binary || !json_profile || !logfile) {
+        fprintf(stderr, "Error: missing required arguments.\n");
         fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
         exit(EXIT_FAILURE);
     }
