@@ -68,8 +68,6 @@ int main(int argc, char *argv[], char *envp[]) {
         exit(EXIT_FAILURE);
     }
 
-    char **target_argv = split_command(target_binary);
-    execve(target_argv[0], target_argv, envp);
     //code to pass json 
     //pass json_profile name into it
     //it returns array of structs
@@ -78,11 +76,30 @@ int main(int argc, char *argv[], char *envp[]) {
     //pass array of structs into libseccomp stuff
     //returns ctx
 
-    /*pid_t pid = fork();
-    if(pid == 0) {
-        //code to load the context
-        execve()
-    }*/
+    char **target_argv = split_command(target_binary);
+
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        perror("Error starting target program[fork]");
+        exit(EXIT_FAILURE);
+    }
+    if (pid == 0) {
+        // code to load the context
+        if (execve(target_argv[0], target_argv, envp) < 0) {
+            perror("Error starting target program[execve]");
+            _exit(EXIT_FAILURE);
+        };
+    } 
+    else if (pid > 0) {
+        char** ptr = target_argv;
+        while(*ptr) {
+            free(*ptr);
+            ptr++;
+        }
+        free(target_argv);
+        ptr = NULL;
+        target_argv = NULL;
+    }
 
     return 0;
 }
