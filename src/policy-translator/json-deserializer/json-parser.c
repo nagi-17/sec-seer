@@ -151,10 +151,10 @@ int parse_JSON (const char *file_path, SeccompProfile *profile) {
                 profile->architectures[i] = safe_strdup(json_array_get_string(arch_arr, i));
             }
         } else {
-            // error handling - what if arch is empty in input config file
+            fprintf(stderr, "Warning: 'architectures' array is empty; proceeding without architectures\n");
         }
     } else {
-        // error handling - what if arch is absent in input config file
+        fprintf(stderr, "Warning: 'architectures' field is missing; proceeding without architectures\n");
     }
 
     JSON_Array *syscall_arr = json_object_get_array(root_obj, "syscalls");
@@ -238,11 +238,11 @@ int parse_JSON (const char *file_path, SeccompProfile *profile) {
             }
         }
         else {
-            // IMP error handling - if syscalls arr is empty
+            fprintf(stderr, "Warning: 'syscalls' array is empty; proceeding without syscalls\n");
         }
     }
     else {
-        // IMP error handling - if syscalls are absent
+        fprintf(stderr, "Warning: 'syscalls' field is missing; proceeding without syscalls\n");
     }
 
     json_value_free(root_value);
