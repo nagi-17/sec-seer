@@ -63,7 +63,27 @@ static int fileJSON_to_str (const char *file_path, char **out_str) {
     return 0;
 }
 
-static void free_profile(SeccompProfile *profile) {
+static void free_filter_contents(SeccompFilter *filter) {
+    if (filter == NULL)
+        return;
+
+    if (filter->caps) {
+        for (size_t i = 0; i < filter->caps_count; i++)
+            free(filter->caps[i]);
+        free(filter->caps);
+    }
+
+    if (filter->arches) {
+        for (size_t i = 0; i < filter->arch_count; i++)
+            free(filter->arches[i]);
+        free(filter->arches);
+    }
+
+    free(filter->min_kernel);
+    memset(filter, 0, sizeof(SeccompFilter));
+}
+
+void free_profile(SeccompProfile *profile) {
     if (profile == NULL)
         return;
 
@@ -89,6 +109,15 @@ static void free_profile(SeccompProfile *profile) {
                 free(rule->args);
             }
 
+            if (rule->include) {
+                free_filter_contents(rule->include);
+                free(rule->include);
+            }
+            if (rule->exclude) {
+                free_filter_contents(rule->exclude);
+                free(rule->exclude);
+            }
+
             free(rule->action);
             free(rule->comment);
         }
@@ -98,6 +127,50 @@ static void free_profile(SeccompProfile *profile) {
     free(profile->default_action);
 
     memset(profile, 0, sizeof(SeccompProfile));
+}
+
+static SeccompFilter *parse_filter(const JSON_Object *obj) {
+    if (obj == NULL)
+        return NULL;
+
+    SeccompFilter *filter = calloc(1, sizeof(SeccompFilter));
+    if (filter == NULL)
+        return NULL;
+
+    JSON_Array *caps_arr = json_object_get_array(obj, "caps");
+    if (caps_arr) {
+        filter->caps_count = json_array_get_count(caps_arr);
+        if (filter->caps_count > 0) {
+            filter->caps = calloc(filter->caps_count, sizeof(char *));
+            if (filter->caps == NULL) {
+                goto fail;
+            }
+            for (size_t i = 0; i < filter->caps_count; i++)
+                filter->caps[i] = safe_strdup(json_array_get_string(caps_arr, i));
+        }
+    }
+
+    JSON_Array *arches_arr = json_object_get_array(obj, "arches");
+    if (arches_arr) {
+        filter->arch_count = json_array_get_count(arches_arr);
+        if (filter->arch_count > 0) {
+            filter->arches = calloc(filter->arch_count, sizeof(char *));
+            if (filter->arches == NULL) {
+                goto fail;
+            }
+            for (size_t i = 0; i < filter->arch_count; i++)
+                filter->arches[i] = safe_strdup(json_array_get_string(arches_arr, i));
+        }
+    }
+
+    filter->min_kernel = safe_strdup(json_object_get_string(obj, "minKernel"));
+
+    return filter;
+
+fail:
+    free_filter_contents(filter);
+    free(filter);
+    return NULL;
 }
 
 int parse_JSON (const char *file_path, SeccompProfile *profile) {
@@ -132,6 +205,12 @@ int parse_JSON (const char *file_path, SeccompProfile *profile) {
     }
 
     profile->default_action = safe_strdup(json_object_get_string(root_obj, "defaultAction"));
+    if (profile->default_action == NULL) {
+        fprintf(stderr, "Error: Missing mandatory field 'defaultAction'\n");
+        ret = -EINVAL;
+        goto cleanup;
+    }
+    
     profile->default_errno_ret = (int)json_object_get_number(root_obj, "defaultErrnoRet");
 
     JSON_Array *arch_arr = json_object_get_array(root_obj, "architectures");
@@ -183,6 +262,9 @@ int parse_JSON (const char *file_path, SeccompProfile *profile) {
 
                 syscall_rule->action = safe_strdup(json_object_get_string(syscall_obj, "action"));
                 syscall_rule->comment = safe_strdup(json_object_get_string(syscall_obj, "comment"));
+
+                syscall_rule->include = parse_filter(json_object_get_object(syscall_obj, "include"));
+                syscall_rule->exclude = parse_filter(json_object_get_object(syscall_obj, "exclude"));
 
                 JSON_Array *names_arr = json_object_get_array(syscall_obj, "names");
                 if (names_arr){
