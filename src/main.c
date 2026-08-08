@@ -1,3 +1,4 @@
+#include <complex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -6,7 +7,14 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "vendor/vector.h"
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <sys/user.h>
+#include <signal.h>
+
+#include <vendor/vector.h>
+
+#include "observer/observer.h"
 
 #define OPTSTR "t:p:l:h"
 #define MAX_COMMAND_LEN 1024
@@ -95,6 +103,18 @@ int main(int argc, char *argv[], char *envp[]) {
         exit(EXIT_FAILURE);
     }
     if (pid == 0) {
+        
+        if(ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0) {
+            perror("Error setting TRACEME");
+            _exit(EXIT_FAILURE);
+        }
+
+        // this raise is to make sure parent has time to setup PTRACE_SETOPTIONS before child loads seccomp filter
+        raise(SIGTRAP);
+
+        // TODO: fetch ctx from parsed json
+        // TODO: load the seccomp context
+
         // code to load the context
         if (execve(target_argv[0], target_argv, envp) < 0) {
             perror("Error starting target program[execve]");
@@ -102,6 +122,24 @@ int main(int argc, char *argv[], char *envp[]) {
         };
     } 
     else if (pid > 0) {
+        int status;
+        struct user_regs_struct regs;
+
+        // Wait for the child's initial SIGSTOP handshake
+        waitpid(pid, &status, 0);
+
+        // Configure ptrace to specifically catch seccomp triggers
+        // PTRACE_O_TRACESECCOMP fires an event when a seccomp rule returns SECCOMP_RET_TRACE
+        if (ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD) < 0) {
+            perror("Error setting ptrace options");
+            kill(pid, SIGKILL);
+            goto cleanup;
+        }
+
+        // Core observation loop
+        observer_loop(pid, status, regs);
+
+cleanup:
         char** ptr = target_argv;
         while(*ptr) {
             free(*ptr);
