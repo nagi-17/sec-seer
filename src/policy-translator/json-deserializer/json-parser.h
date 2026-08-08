@@ -35,11 +35,17 @@ typedef struct {
 } SeccompSyscallRule;
 
 typedef struct {
+    char *architecture;
+    char **sub_architectures;
+    size_t sub_arch_count;
+} SeccompArchMap;
+
+typedef struct {
     char *default_action;
     int default_errno_ret;
 
-    char **architectures;
-    size_t arch_count;
+    SeccompArchMap *arch_map;
+    size_t arch_map_count;
     
     SeccompSyscallRule *syscalls;
     size_t syscalls_count;

@@ -87,10 +87,20 @@ void free_profile(SeccompProfile *profile) {
     if (profile == NULL)
         return;
 
-    if (profile->architectures) {
-        for (size_t i = 0; i < profile->arch_count; i++)
-            free(profile->architectures[i]);
-        free(profile->architectures);
+    if (profile->arch_map) {
+        for (size_t i = 0; i < profile->arch_map_count; i++) {
+            SeccompArchMap *map = &profile->arch_map[i];
+
+            free(map->architecture);
+
+            if(map->sub_architectures) {
+                for (int j = 0; j < map->sub_arch_count; j++) {
+                    free(map->sub_architectures[j]);
+                }
+
+                free(map->sub_architectures);
+            }
+        }
     }
 
     if (profile->syscalls) {
@@ -210,30 +220,59 @@ int parse_JSON (const char *file_path, SeccompProfile *profile) {
         ret = -EINVAL;
         goto cleanup;
     }
-    
+
     profile->default_errno_ret = (int)json_object_get_number(root_obj, "defaultErrnoRet");
 
-    JSON_Array *arch_arr = json_object_get_array(root_obj, "architectures");
-    if (arch_arr) {
-        profile->arch_count = json_array_get_count(arch_arr);
+    JSON_Array *arch_map = json_object_get_array(root_obj, "archMap");
+    if (arch_map) {
+        profile->arch_map_count = json_array_get_count(arch_map);
 
-        if (profile->arch_count > 0) {
-            profile->architectures = calloc(profile->arch_count, sizeof(char *));
+        if (profile->arch_map_count > 0) {
+            profile->arch_map = calloc(profile->arch_map_count, sizeof(SeccompArchMap));
 
-            if (profile->architectures == NULL) {
-                fprintf(stderr, "Error: Architectures allocation failed\n");
+            if (profile->arch_map == NULL) {
+                fprintf(stderr, "Error: Architectures Map allocation failed\n");
                 ret = -ENOMEM;
                 goto cleanup;
             }
 
-            for (size_t i = 0; i < profile->arch_count; i++) {
-                profile->architectures[i] = safe_strdup(json_array_get_string(arch_arr, i));
+            for (size_t i = 0; i < profile->arch_map_count; i++) {
+                JSON_Object *arch_map_obj = json_array_get_object(arch_map, i);
+
+                if (arch_map_obj == NULL) {
+                    fprintf(stderr, "Error: Couldn't get arch map object\n");
+                    ret = -EINVAL;
+                    goto cleanup;
+                }
+
+                SeccompArchMap *arch_obj = &profile->arch_map[i];
+                
+                arch_obj->architecture = safe_strdup(json_object_get_string(arch_map_obj, "architecture"));
+                
+                JSON_Array *sub_arch_arr = json_object_get_array(arch_map_obj, "subArchitectures");
+                if (sub_arch_arr) {
+                    arch_obj->sub_arch_count = json_array_get_count(sub_arch_arr);
+
+                    if (arch_obj->sub_arch_count > 0) {
+                        arch_obj->sub_architectures = calloc(arch_obj->sub_arch_count, sizeof(char *));
+
+                        if (arch_obj->sub_architectures == NULL) {
+                            fprintf(stderr, "Error: Sub-architecture array of arch map allocation failed\n");
+                            ret = -ENOMEM;
+                            goto cleanup;
+                        }
+
+                        for (size_t j = 0; j < arch_obj->sub_arch_count; j++) {
+                            arch_obj->sub_architectures[j] = safe_strdup(json_array_get_string(sub_arch_arr, j));
+                        }
+                    }
+                }
             }
         } else {
-            fprintf(stderr, "Warning: 'architectures' array is empty; proceeding without architectures\n");
+            fprintf(stderr, "Warning: 'archMap' is empty; proceeding without architectures\n");
         }
     } else {
-        fprintf(stderr, "Warning: 'architectures' field is missing; proceeding without architectures\n");
+        fprintf(stderr, "Warning: 'archMap' field is missing; proceeding without architectures\n");
     }
 
     JSON_Array *syscall_arr = json_object_get_array(root_obj, "syscalls");
