@@ -94,13 +94,15 @@ void free_profile(SeccompProfile *profile) {
             free(map->architecture);
 
             if(map->sub_architectures) {
-                for (int j = 0; j < map->sub_arch_count; j++) {
+                for (size_t j = 0; j < map->sub_arch_count; j++) {
                     free(map->sub_architectures[j]);
                 }
 
                 free(map->sub_architectures);
             }
         }
+
+        free(profile->arch_map);
     }
 
     if (profile->syscalls) {
