@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <limits.h>
 #include <sys/utsname.h>
-
 #include "ctx-build.h"
 
 static uint32_t map_action_string(const char *action_str, int default_errno_ret) {

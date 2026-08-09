@@ -11,7 +11,7 @@
 #include <linux/limits.h>
 #include <string.h>
 #include "observer.h"
-#include "logger.h"
+#include <logger/logger.h>
 #include <seccomp.h>
 
 typedef struct {

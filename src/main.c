@@ -11,8 +11,8 @@
 #include <signal.h>
 
 #include <vector.h>
-#include "observer/observer.h"
-#include "policy-translator/json-deserializer/json-parser.h"
+#include <observer/observer.h>
+#include <policy-translator/json-deserializer/json-parser.h>
 
 #define OPTSTR "t:p:l:h"
 #define MAX_COMMAND_LEN 1024
@@ -89,10 +89,6 @@ int main(int argc, char *argv[], char *envp[]) {
     if (parse_JSON(json_profile, &profile) < 0) {
         exit(EXIT_FAILURE);
     }
-    
-    //code to fetch ctx from parsed json
-    //pass array of structs into libseccomp stuff
-    //returns ctx
 
     char **target_argv = split_command(target_binary);
 
@@ -121,6 +117,15 @@ int main(int argc, char *argv[], char *envp[]) {
         };
     } 
     else if (pid > 0) {
+        char** ptr = target_argv;
+        while(*ptr) {
+            free(*ptr);
+            ptr++;
+        }
+        free(target_argv);
+        ptr = NULL;
+        target_argv = NULL;
+
         int status;
         struct user_regs_struct regs;
 
@@ -132,18 +137,8 @@ int main(int argc, char *argv[], char *envp[]) {
             kill(pid, SIGKILL);
             exit(EXIT_FAILURE);
         }
-
         observer_loop(pid, status, regs, logfile);
 
-cleanup:
-        char** ptr = target_argv;
-        while(*ptr) {
-            free(*ptr);
-            ptr++;
-        }
-        free(target_argv);
-        ptr = NULL;
-        target_argv = NULL;
     }
 
     return 0;
