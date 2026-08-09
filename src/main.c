@@ -125,18 +125,15 @@ int main(int argc, char *argv[], char *envp[]) {
         int status;
         struct user_regs_struct regs;
 
-        // Wait for the child's initial SIGSTOP handshake
+        // Wait for the child's initial SIGTRAP handshake
         waitpid(pid, &status, 0);
 
-        // Configure ptrace to specifically catch seccomp triggers
-        // PTRACE_O_TRACESECCOMP fires an event when a seccomp rule returns SECCOMP_RET_TRACE
         if (ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD) < 0) {
             perror("Error setting ptrace options");
             kill(pid, SIGKILL);
-            goto cleanup;
+            exit(EXIT_FAILURE);
         }
 
-        // Core observation loop
         observer_loop(pid, status, regs);
 
 cleanup:
