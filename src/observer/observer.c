@@ -8,21 +8,72 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <time.h>
-
+#include <linux/limits.h>
+#include <string.h>
 #include "observer.h"
+#include "logger.h"
+#include <seccomp.h>
 
-static void print_timestamp(void) {
+typedef struct {
+    char* func_name;
+    char* file_line;
+} addr2line_output;
+
+char* syscall_name_resolver(int syscall_num) {
+    uint32_t arch = seccomp_arch_native();
+    char *syscall_name = seccomp_syscall_resolve_num_arch(arch, syscall_num);
+    return syscall_name;
+}
+
+addr2line_output* get_source_location(pid_t pid, unsigned long long rip) {
+    char exe_path[PATH_MAX];
+    char proc_path[64];
+    addr2line_output* result = (addr2line_output*)calloc(1, sizeof(addr2line_output));
+
+    snprintf(proc_path, sizeof(proc_path), "/proc/%d/exe", pid);
+    ssize_t len = readlink(proc_path, exe_path, sizeof(exe_path) - 1);
+    if (len == -1) {
+        fprintf(stderr ,"Error: failed to read executable path\n");
+        return result;
+    }
+    exe_path[len] = '\0';
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "addr2line -f -e %s 0x%llx", exe_path, rip);
+
+    FILE *fp = popen(cmd, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: failed to execute addr2line\n");
+        return result;
+    }
+
+    char* func_name = (char *)calloc(256, sizeof(char));
+    char* file_line = (char *)calloc(256, sizeof(char));
+
+    if (fgets(func_name, 256, fp) != NULL &&
+        fgets(file_line, 256, fp) != NULL) {
+        
+        func_name[strcspn(func_name, "\n")] = 0;
+        file_line[strcspn(file_line, "\n")] = 0;
+    }
+
+    pclose(fp);
+    result->file_line = file_line;
+    result->func_name = func_name;
+
+    return result;
+}
+
+static char* get_timestamp(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-
-    char buf[64];
+    char* buf = (char *)calloc(64, 1);
     struct tm tm;
     localtime_r(&ts.tv_sec, &tm);
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-    printf("%s.%03ld", buf, ts.tv_nsec / 1000000);
+    return buf;
 }
 
-void observer_loop(pid_t pid, int status, struct user_regs_struct regs) {
+void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* logfile) {
     while (1) {
         if (ptrace(PTRACE_CONT, pid, 0, 0) < 0) {
             perror("Error continuing tracee");
@@ -32,73 +83,63 @@ void observer_loop(pid_t pid, int status, struct user_regs_struct regs) {
 
         waitpid(pid, &status, 0);
 
-        // Break if the child naturally exited or was killed by something else
         if (WIFEXITED(status) || WIFSIGNALED(status)) {
             break;
         }
 
-        // Check if the child stopped because it hit our banned seccomp rule
         if ((status >> 16) == PTRACE_EVENT_SECCOMP) {
             
-            // Extract the CPU registers at the exact moment of the banned syscall
             if (ptrace(PTRACE_GETREGS, pid, 0, &regs) < 0) {
                 perror("Error getting registers");
                 break;
             }
 
-            // Registers on x86_64:
-            // regs.orig_rax : Syscall number
-            // regs.rip      : Instruction pointer (use this for address2line mapping)
-            // regs.rdi      : First argument (e.g., file descriptor or path pointer)
-
+            char* time_string = get_timestamp();
             printf("[Tracer] Seccomp violation intercepted!\n");
             printf("  Timestamp : ");
-            print_timestamp();
+            printf("%s", time_string);
             printf("\n");
             printf("  PID       : %d\n", pid);
+            printf("  Syscall Number  : %llu\n", regs.orig_rax);
+            printf("  RDI       : 0x%016llx\n", regs.rdi);
+            printf("  RSI       : 0x%016llx\n", regs.rsi);
+            printf("  RDX       : 0x%016llx\n", regs.rdx);
+            printf("  R10       : 0x%016llx\n", regs.r10);
+            printf("  R8        : 0x%016llx\n", regs.r8);
+            printf("  R9        : 0x%016llx\n", regs.r9);
+            printf("  RBP       : 0x%016llx\n", regs.rbp);   
+            printf("  RIP       : 0x%016llx\n", regs.rip);
 
-            // General purpose registers
-            printf("  R15       : 0x%llx\n", regs.r15);
-            printf("  R14       : 0x%llx\n", regs.r14);
-            printf("  R13       : 0x%llx\n", regs.r13);
-            printf("  R12       : 0x%llx\n", regs.r12);
-            printf("  RBP       : 0x%llx\n", regs.rbp);
-            printf("  RBX       : 0x%llx\n", regs.rbx);
-            printf("  R11       : 0x%llx\n", regs.r11);
-            printf("  R10       : 0x%llx\n", regs.r10);
-            printf("  R9        : 0x%llx\n", regs.r9);
-            printf("  R8        : 0x%llx\n", regs.r8);
-            printf("  RAX       : 0x%llx\n", regs.rax);
-            printf("  RCX       : 0x%llx\n", regs.rcx);
-            printf("  RDX       : 0x%llx\n", regs.rdx);
-            printf("  RSI       : 0x%llx\n", regs.rsi);
-            printf("  RDI       : 0x%llx\n", regs.rdi);
+            addr2line_output* addr2line_info = get_source_location(pid, regs.rip);
 
-            // Syscall number and instruction pointer
-            printf("  Syscall   : %llu (orig_rax)\n", regs.orig_rax);
-            printf("  RIP       : 0x%llx\n", regs.rip);
+            SeccompViolation sv;
+            sv.pid = pid;
+            sv.rip = regs.rip;
+            sv.rbp = regs.rbp;
+            sv.syscall = regs.orig_rax;
+            sv.rdi = regs.rdi;
+            sv.rsi = regs.rsi;
+            sv.rdx = regs.rdx;
+            sv.r10 = regs.r10;
+            sv.r8 = regs.r8;
+            sv.r9 = regs.r9;
+            sv.syscall_name = syscall_name_resolver(regs.orig_rax);
+            sv.resolved_file = addr2line_info->file_line;
+            sv.resolved_func = addr2line_info->func_name;
+            sv.timestamp = time_string;
 
-            // Segment and control registers
-            printf("  CS        : 0x%llx\n", regs.cs);
-            printf("  EFLAGS    : 0x%llx\n", regs.eflags);
-            printf("  RSP       : 0x%llx\n", regs.rsp);
-            printf("  SS        : 0x%llx\n", regs.ss);
-            printf("  FS_BASE   : 0x%llx\n", regs.fs_base);
-            printf("  GS_BASE   : 0x%llx\n", regs.gs_base);
-            printf("  DS        : 0x%llx\n", regs.ds);
-            printf("  ES        : 0x%llx\n", regs.es);
-            printf("  FS        : 0x%llx\n", regs.fs);
-            printf("  GS        : 0x%llx\n", regs.gs);
+            free(addr2line_info);
+
+            if (log_seccomp_violation(logfile, &sv) < 0) {
+                fprintf(stderr, "Error: could not write json logs to file.\n");
+            }
             
-            
-            // TODO: Call your logger function here with the extracted data
-            // TODO: Call your address2line mapping function here
-
-            // The test matrix expects the process to be killed immediately after a banned syscall.
-            // Since we trapped it via SECCOMP_RET_TRACE, we must manually tear it down.
-
-            kill(pid, SIGKILL);
-            break;
+            free(sv.syscall_name);
+            free(sv.timestamp);
+            free(sv.resolved_func);
+            free(sv.resolved_file);
+            //kill(pid, SIGKILL);
+            //break;
         }
     }
 }
