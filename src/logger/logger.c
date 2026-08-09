@@ -5,8 +5,15 @@
 #include <string.h>
 #include <unistd.h>
 
-int log_seccomp_violation(const char *file_path, const SeccompViolation *v) {
-    if (file_path == NULL || v == NULL) {
+/* JSON has no hex number literal, so registers are serialized as "0x..." strings. */
+static int write_hex_register(JSON_Object *obj, const char *name, unsigned long long value) {
+    char hex[32];
+    snprintf(hex, sizeof(hex), "0x%llx", value);
+    return json_object_set_string(obj, name, hex);
+}
+
+int log_seccomp_violation(const char *file_path, const SeccompViolation *v, int *first_in_array) {
+    if (file_path == NULL || v == NULL || first_in_array == NULL) {
         return -1;
     }
 
@@ -29,14 +36,14 @@ int log_seccomp_violation(const char *file_path, const SeccompViolation *v) {
     JSON_Value *regs = json_value_init_object();
     if (regs != NULL) {
         JSON_Object *regs_obj = json_value_get_object(regs);
-        json_object_set_number(regs_obj, "rdi", (double)v->rdi);
-        json_object_set_number(regs_obj, "rsi", (double)v->rsi);
-        json_object_set_number(regs_obj, "rdx", (double)v->rdx);
-        json_object_set_number(regs_obj, "r10", (double)v->r10);
-        json_object_set_number(regs_obj, "r8", (double)v->r8);
-        json_object_set_number(regs_obj, "r9", (double)v->r9);
-        json_object_set_number(regs_obj, "rbp", (double)v->rbp);
-        json_object_set_number(regs_obj, "rip", (double)v->rip);
+        write_hex_register(regs_obj, "rdi", v->rdi);
+        write_hex_register(regs_obj, "rsi", v->rsi);
+        write_hex_register(regs_obj, "rdx", v->rdx);
+        write_hex_register(regs_obj, "r10", v->r10);
+        write_hex_register(regs_obj, "r8", v->r8);
+        write_hex_register(regs_obj, "r9", v->r9);
+        write_hex_register(regs_obj, "rbp", v->rbp);
+        write_hex_register(regs_obj, "rip", v->rip);
         json_object_set_value(obj, "registers", regs);
     }
 
@@ -53,11 +60,19 @@ int log_seccomp_violation(const char *file_path, const SeccompViolation *v) {
         return -1;
     }
 
+    /* Open once with "a" (create if missing). First violation writes '['. */
     FILE *fp = fopen(file_path, "a");
     if (fp == NULL) {
         json_free_serialized_string(serialized);
         json_value_free(root);
         return -1;
+    }
+
+    if (*first_in_array) {
+        fputc('[', fp);
+        *first_in_array = 0;
+    } else {
+        fputc(',', fp); /* separate objects within the array */
     }
 
     fputs(serialized, fp);
@@ -67,5 +82,19 @@ int log_seccomp_violation(const char *file_path, const SeccompViolation *v) {
     json_free_serialized_string(serialized);
     json_value_free(root);
 
+    return 0;
+}
+
+int logger_close(const char *file_path) {
+    if (file_path == NULL) {
+        return -1;
+    }
+    FILE *fp = fopen(file_path, "a");
+    if (fp == NULL) {
+        return -1;
+    }
+    fputc(']', fp);
+    fputc('\n', fp);
+    fclose(fp);
     return 0;
 }

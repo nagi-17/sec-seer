@@ -69,11 +69,14 @@ static char* get_timestamp(void) {
     char* buf = (char *)calloc(64, 1);
     struct tm tm;
     localtime_r(&ts.tv_sec, &tm);
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+    char date[32];
+    strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", &tm);
+    snprintf(buf, 64, "%s.%03ld", date, ts.tv_nsec / 1000000);
     return buf;
 }
 
 void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* logfile) {
+    int first_in_array = 1;
     while (1) {
         if (ptrace(PTRACE_CONT, pid, 0, 0) < 0) {
             perror("Error continuing tracee");
@@ -130,7 +133,7 @@ void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* lo
 
             free(addr2line_info);
 
-            if (log_seccomp_violation(logfile, &sv) < 0) {
+            if (log_seccomp_violation(logfile, &sv, &first_in_array) < 0) {
                 fprintf(stderr, "Error: could not write json logs to file.\n");
             }
             
@@ -142,4 +145,7 @@ void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* lo
             //break;
         }
     }
+
+    /* Tracee exited or was killed; close the JSON array in the log. */
+    logger_close(logfile);
 }

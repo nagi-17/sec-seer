@@ -27,9 +27,19 @@ typedef struct {
 
 /*
  * Appends one JSON object describing `v` to `file_path` (created if missing).
- * Uses pretty serialization so each violation is one readable block; a newline
- * separates consecutive entries. Returns 0 on success, -1 on error.
+ * Produces a streaming array: the first call writes '[', subsequent calls
+ * are comma-separated. `first_in_array` must point to an int initialized to 1
+ * before the first call; after the loop it holds 0. After the last violation,
+ * the caller must append ']' to complete the array (see logger_close below).
+ * Register fields are serialized as hex strings ("0x...") since JSON numbers
+ * have no hex representation.
+ *
+ * Returns 0 on success, -1 on error.
  */
-int log_seccomp_violation(const char *file_path, const SeccompViolation *v);
+int log_seccomp_violation(const char *file_path, const SeccompViolation *v, int *first_in_array);
+
+/* Writes the closing ']' to complete the JSON array started by
+ * log_seccomp_violation(). Call after all violations have been logged. */
+int logger_close(const char *file_path);
 
 #endif
