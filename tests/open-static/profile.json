@@ -8,12 +8,12 @@
   ],
   "syscalls": [
     {
-      "names": ["open"],
+      "names": ["connect"],
       "action": "SCMP_ACT_KILL",
       "args": []
     },
     {
-      "names": ["openat"],
+      "names": ["read"],
       "action": "SCMP_ACT_KILL",
       "args": []
     }
