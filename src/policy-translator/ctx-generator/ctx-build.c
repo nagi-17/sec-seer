@@ -2,102 +2,246 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/utsname.h>
 
 #include "ctx-build.h"
 
-// helper functions to convert string to real constants
 static uint32_t map_action_string(const char *action_str, int default_errno_ret) {
     if (action_str == NULL)
-        return SCMP_ACT_ALLOW; // TODO: decide real fallback behavior
+        return SCMP_ACT_ALLOW;
 
-    /* TODO: strcmp chain or lookup table for:
-     *   SCMP_ACT_ALLOW
-     *   SCMP_ACT_ERRNO      -> SCMP_ACT_ERRNO(default_errno_ret)
-     *   SCMP_ACT_KILL
-     *   SCMP_ACT_KILL_PROCESS
-     *   SCMP_ACT_TRAP
-     *   SCMP_ACT_TRACE      -> SCMP_ACT_TRACE(some_value)
-     *   SCMP_ACT_LOG
-     *   SCMP_ACT_NOTIFY
-     */
+    if (strcmp(action_str, "SCMP_ACT_ALLOW") == 0)
+        return SCMP_ACT_ALLOW;
+    if (strcmp(action_str, "SCMP_ACT_ERRNO") == 0)
+        return SCMP_ACT_ERRNO(default_errno_ret);
+    if (strcmp(action_str, "SCMP_ACT_KILL") == 0)
+        return SCMP_ACT_KILL;
+    if (strcmp(action_str, "SCMP_ACT_KILL_PROCESS") == 0)
+        return SCMP_ACT_KILL_PROCESS;
+    if (strcmp(action_str, "SCMP_ACT_KILL_THREAD") == 0)
+        return SCMP_ACT_KILL_THREAD;
+    if (strcmp(action_str, "SCMP_ACT_TRAP") == 0)
+        return SCMP_ACT_TRAP;
+    if (strcmp(action_str, "SCMP_ACT_TRACE") == 0)
+        return SCMP_ACT_TRACE(0); // trace with data=0; TODO: allow custom value
+    if (strcmp(action_str, "SCMP_ACT_LOG") == 0)
+        return SCMP_ACT_LOG;
+    if (strcmp(action_str, "SCMP_ACT_NOTIFY") == 0)
+        return SCMP_ACT_NOTIFY;
 
-    (void)action_str;
-    (void)default_errno_ret;
+    fprintf(stderr, "Warning: unknown action '%s', defaulting to SCMP_ACT_ALLOW\n", action_str);
     return SCMP_ACT_ALLOW;
 }
 
 static uint32_t map_arch_string(const char *arch_str) {
-    // TODO: strcmp chain or lookup table for SCMP_ARCH_* constants
-    (void)arch_str;
+    if (arch_str == NULL)
+        return SCMP_ARCH_NATIVE;
+
+    if (strcmp(arch_str, "SCMP_ARCH_NATIVE") == 0) return SCMP_ARCH_NATIVE;
+    if (strcmp(arch_str, "SCMP_ARCH_X86") == 0) return SCMP_ARCH_X86;
+    if (strcmp(arch_str, "SCMP_ARCH_X86_64") == 0) return SCMP_ARCH_X86_64;
+    if (strcmp(arch_str, "SCMP_ARCH_X32") == 0) return SCMP_ARCH_X32;
+    if (strcmp(arch_str, "SCMP_ARCH_ARM") == 0) return SCMP_ARCH_ARM;
+    if (strcmp(arch_str, "SCMP_ARCH_AARCH64") == 0) return SCMP_ARCH_AARCH64;
+    if (strcmp(arch_str, "SCMP_ARCH_MIPS") == 0) return SCMP_ARCH_MIPS;
+    if (strcmp(arch_str, "SCMP_ARCH_MIPS64") == 0) return SCMP_ARCH_MIPS64;
+    if (strcmp(arch_str, "SCMP_ARCH_MIPS64N32") == 0) return SCMP_ARCH_MIPS64N32;
+    if (strcmp(arch_str, "SCMP_ARCH_MIPSEL") == 0) return SCMP_ARCH_MIPSEL;
+    if (strcmp(arch_str, "SCMP_ARCH_MIPSEL64") == 0) return SCMP_ARCH_MIPSEL64;
+    if (strcmp(arch_str, "SCMP_ARCH_MIPSEL64N32") == 0) return SCMP_ARCH_MIPSEL64N32;
+    if (strcmp(arch_str, "SCMP_ARCH_PPC") == 0) return SCMP_ARCH_PPC;
+    if (strcmp(arch_str, "SCMP_ARCH_PPC64") == 0) return SCMP_ARCH_PPC64;
+    if (strcmp(arch_str, "SCMP_ARCH_PPC64LE") == 0) return SCMP_ARCH_PPC64LE;
+    if (strcmp(arch_str, "SCMP_ARCH_S390") == 0) return SCMP_ARCH_S390;
+    if (strcmp(arch_str, "SCMP_ARCH_S390X") == 0) return SCMP_ARCH_S390X;
+    if (strcmp(arch_str, "SCMP_ARCH_PARISC") == 0) return SCMP_ARCH_PARISC;
+    if (strcmp(arch_str, "SCMP_ARCH_PARISC64") == 0) return SCMP_ARCH_PARISC64;
+    if (strcmp(arch_str, "SCMP_ARCH_RISCV64") == 0) return SCMP_ARCH_RISCV64;
+
+    fprintf(stderr, "Warning: unknown arch '%s', defaulting to SCMP_ARCH_NATIVE\n",
+            arch_str);
     return SCMP_ARCH_NATIVE;
 }
 
 static int map_cmp_op_string(const char *op_str) {
-    // TODO: strcmp chain or lookup table for SCMP_CMP_* values
-    (void)op_str;
+    if (op_str == NULL)
+        return SCMP_CMP_EQ;
+
+    if (strcmp(op_str, "SCMP_CMP_NE") == 0)         return SCMP_CMP_NE;
+    if (strcmp(op_str, "SCMP_CMP_LT") == 0)         return SCMP_CMP_LT;
+    if (strcmp(op_str, "SCMP_CMP_LE") == 0)         return SCMP_CMP_LE;
+    if (strcmp(op_str, "SCMP_CMP_EQ") == 0)         return SCMP_CMP_EQ;
+    if (strcmp(op_str, "SCMP_CMP_GE") == 0)         return SCMP_CMP_GE;
+    if (strcmp(op_str, "SCMP_CMP_GT") == 0)         return SCMP_CMP_GT;
+    if (strcmp(op_str, "SCMP_CMP_MASKED_EQ") == 0)  return SCMP_CMP_MASKED_EQ;
+
+    fprintf(stderr, "Warning: unknown cmp op '%s', defaulting to SCMP_CMP_EQ\n",
+            op_str);
     return SCMP_CMP_EQ;
 }
 
-// override trace
-/*
-    TODO: Decide if non-ALLOW actions get rewritten to SCMP_ACT_TRACE(...)
-    so ptrace gets control instead of the kernel silently blocking or not
-    so basically finalize exact policy (which actions get overridden vs passed
-    through as-is).
-*/
 
+// Policy: ALLOW stays ALLOW; everything else becomes SCMP_ACT_TRACE(0).
 static uint32_t resolve_rule_action(const SeccompSyscallRule *rule, int syscall_id, int default_errno_ret) {
-    (void)rule;
     (void)syscall_id;
-    (void)default_errno_ret;
 
-    /* TODO: apply map_action_string() then override per policy */
+    if (rule->action == NULL)
+        return SCMP_ACT_ALLOW;
+
+    uint32_t mapped = map_action_string(rule->action, default_errno_ret);
+
+    if (mapped == SCMP_ACT_ALLOW)
+        return SCMP_ACT_ALLOW;
+
     return SCMP_ACT_TRACE(0);
 }
 
-// include/exclude helper functions
 static int arch_matches(const char **arches, size_t arch_count, const SeccompRuntimeContext *runtime_ctx) {
-    /* TODO: return 1 if runtime_ctx->current_arch appears in arches[] */
-    (void)arches;
-    (void)arch_count;
-    (void)runtime_ctx;
-    return 1;
+    if (arches == NULL || arch_count == 0)
+        return 1;
+
+    if (runtime_ctx == NULL || runtime_ctx->current_arch == NULL)
+        return 1;
+
+    for (size_t i = 0; i < arch_count; i++) {
+        if (arches[i] == NULL)
+            continue;
+        // SCMP_ARCH_NATIVE matches whatever the current architecture actually is.
+        if (strcmp(arches[i], "SCMP_ARCH_NATIVE") == 0)
+            return 1;
+        if (strcmp(arches[i], runtime_ctx->current_arch) == 0)
+            return 1;
+    }
+
+    return 0;
 }
 
 static int caps_match(const char **caps, size_t caps_count, const SeccompRuntimeContext *runtime_ctx) {
-    (void)caps;
-    (void)caps_count;
-    (void)runtime_ctx;
+    if (caps == NULL || caps_count == 0)
+        return 1;
+
+    if (runtime_ctx == NULL || runtime_ctx->held_caps == NULL)
+        return 0;
+
+    for (size_t i = 0; i < caps_count; i++) {
+        int found = 0;
+        for (size_t j = 0; j < runtime_ctx->held_caps_count; j++) {
+            if (runtime_ctx->held_caps[j] != NULL &&
+                strcmp(caps[i], runtime_ctx->held_caps[j]) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found)
+            return 0;
+    }
+
     return 1;
 }
 
 static int kernel_matches(const char *min_kernel, const SeccompRuntimeContext *runtime_ctx) {
-    /* TODO: parse min_kernel and compare against
-     * runtime_ctx->kernel_major / kernel_minor */
-    (void)min_kernel;
-    (void)runtime_ctx;
-    return 1;
+    if (min_kernel == NULL || min_kernel[0] == '\0')
+        return 1;
+
+    if (runtime_ctx == NULL)
+        return 0;
+
+    unsigned int req_major = 0, req_minor = 0;
+    if (sscanf(min_kernel, "%u.%u", &req_major, &req_minor) != 2)
+        return 0;
+
+    if (runtime_ctx->kernel_major > req_major)
+        return 1;
+    if (runtime_ctx->kernel_major < req_major)
+        return 0;
+
+    return runtime_ctx->kernel_minor >= req_minor;
 }
 
-/*
- * Returns 1 if the rule should be applied given the current runtime
- * context (taking include/exclude filters into account), 0 otherwise.
- */
 static int rule_applies(const SeccompSyscallRule *rule, const SeccompRuntimeContext *runtime_ctx) {
+    if (rule == NULL)
+        return 0;
+
     if (rule->include != NULL) {
-        /* TODO: rule only applies if arch_matches && caps_match &&
-         * kernel_matches against rule->include's fields */
+        SeccompFilter *inc = rule->include;
+        if (!arch_matches((const char **)inc->arches, inc->arch_count, runtime_ctx))
+            return 0;
+        if (!caps_match((const char **)inc->caps, inc->caps_count, runtime_ctx))
+            return 0;
+        if (!kernel_matches(inc->min_kernel, runtime_ctx))
+            return 0;
     }
 
     if (rule->exclude != NULL) {
-        /* TODO: rule is skipped if arch_matches && caps_match &&
-         * kernel_matches against rule->exclude's fields */
+        SeccompFilter *exc = rule->exclude;
+        if (arch_matches((const char **)exc->arches, exc->arch_count, runtime_ctx) &&
+            caps_match((const char **)exc->caps, exc->caps_count, runtime_ctx) &&
+            kernel_matches(exc->min_kernel, runtime_ctx))
+            return 0;
     }
 
-    (void)rule;
-    (void)runtime_ctx;
     return 1;
+}
+
+static int build_held_caps(SeccompRuntimeContext *ctx) {
+    FILE *fp = fopen("/proc/self/status", "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: could not open /proc/self/status\n");
+        return -EIO;
+    }
+
+    char line[512];
+    unsigned long long cap_eff = 0;
+    int found = 0;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (strncmp(line, "CapEff:", 7) == 0) {
+            cap_eff = strtoull(line + 7, NULL, 16);
+            found = 1;
+            break;
+        }
+    }
+    fclose(fp);
+
+    if (!found)
+        return -EIO;
+
+    size_t count = 0;
+    for (int i = 0; i < 64; i++) {
+        if (cap_eff & (1ULL << i))
+            count++;
+    }
+
+    if (count == 0)
+        return 0;
+
+    ctx->held_caps = calloc(count, sizeof(char *));
+    if (ctx->held_caps == NULL)
+        return -ENOMEM;
+
+    size_t idx = 0;
+    for (int i = 0; i < 64; i++) {
+        if (cap_eff & (1ULL << i)) {
+            char name[64];
+            
+            snprintf(name, sizeof(name), "CAP_%d", i);
+            ctx->held_caps[idx] = strdup(name);
+            if (ctx->held_caps[idx] == NULL) {
+
+                for (size_t k = 0; k < idx; k++)
+                    free(ctx->held_caps[k]);
+                free(ctx->held_caps);
+                ctx->held_caps = NULL;
+                
+                return -ENOMEM;
+            }
+            idx++;
+        }
+    }
+
+    ctx->held_caps_count = count;
+    return 0;
 }
 
 int build_runtime_context(SeccompRuntimeContext *ctx) {
@@ -112,13 +256,47 @@ int build_runtime_context(SeccompRuntimeContext *ctx) {
         return -EIO;
     }
 
-    /* TODO: parse uts.machine -> ctx->current_arch (e.g. "x86_64" ->
-     * "SCMP_ARCH_X86_64") */
+    /* Parse uts.machine -> ctx->current_arch (e.g. "x86_64" ->
+     * "SCMP_ARCH_X86_64"). */
+    const char *arch_str = NULL;
+    if (strcmp(uts.machine, "x86_64") == 0)        arch_str = "SCMP_ARCH_X86_64";
+    else if (strcmp(uts.machine, "i386") == 0 ||
+             strcmp(uts.machine, "i486") == 0 ||
+             strcmp(uts.machine, "i586") == 0 ||
+             strcmp(uts.machine, "i686") == 0)     arch_str = "SCMP_ARCH_X86";
+    else if (strcmp(uts.machine, "aarch64") == 0)  arch_str = "SCMP_ARCH_AARCH64";
+    else if (strcmp(uts.machine, "armv7l") == 0 ||
+             strcmp(uts.machine, "armv6l") == 0)   arch_str = "SCMP_ARCH_ARM";
+    else if (strcmp(uts.machine, "ppc64le") == 0)  arch_str = "SCMP_ARCH_PPC64LE";
+    else if (strcmp(uts.machine, "ppc64") == 0)    arch_str = "SCMP_ARCH_PPC64";
+    else if (strcmp(uts.machine, "ppc") == 0)      arch_str = "SCMP_ARCH_PPC";
+    else if (strcmp(uts.machine, "s390x") == 0)    arch_str = "SCMP_ARCH_S390X";
+    else if (strcmp(uts.machine, "s390") == 0)     arch_str = "SCMP_ARCH_S390";
+    else if (strcmp(uts.machine, "riscv64") == 0)  arch_str = "SCMP_ARCH_RISCV64";
+    else if (strcmp(uts.machine, "mips") == 0)     arch_str = "SCMP_ARCH_MIPS";
+    else if (strcmp(uts.machine, "mips64") == 0)   arch_str = "SCMP_ARCH_MIPS64";
+    else                                           arch_str = "SCMP_ARCH_NATIVE";
 
-    /* TODO: parse uts.release -> ctx->kernel_major / kernel_minor */
+    ctx->current_arch = strdup(arch_str);
+    if (ctx->current_arch == NULL)
+        return -ENOMEM;
 
-    /* TODO: read /proc/self/status "CapEff" line (or use libcap) to
-     * populate ctx->held_caps / held_caps_count */
+    unsigned int major = 0, minor = 0;
+    if (sscanf(uts.release, "%u.%u", &major, &minor) != 2) {
+        fprintf(stderr, "Warning: could not parse kernel version '%s'\n", uts.release);
+        major = 0;
+        minor = 0;
+    }
+    ctx->kernel_major = major;
+    ctx->kernel_minor = minor;
+
+
+    int ret = build_held_caps(ctx);
+    if (ret != 0) {
+        fprintf(stderr, "Error: could not read capability info\n");
+        free_runtime_context(ctx);
+        return ret;
+    }
 
     return 0;
 }
@@ -138,14 +316,33 @@ void free_runtime_context(SeccompRuntimeContext *ctx) {
     memset(ctx, 0, sizeof(SeccompRuntimeContext));
 }
 
-// main build func
+// main build ctx functions
+static int add_arg_rule(scmp_filter_ctx ctx, uint32_t action, int syscall_id, const SeccompSyscallRule *rule) {
+    if (rule->args_count == 0 || rule->args_count > UINT_MAX)
+        return -EINVAL;
+
+    struct scmp_arg_cmp *cmp_array = calloc(rule->args_count, sizeof(struct scmp_arg_cmp));
+    if (cmp_array == NULL)
+        return -ENOMEM;
+
+    for (size_t i = 0; i < rule->args_count; i++) {
+        const SeccompArgConstraint *arg = &rule->args[i];
+        cmp_array[i].arg = arg->index;
+        cmp_array[i].op = (enum scmp_compare)map_cmp_op_string(arg->op);
+        cmp_array[i].datum_a = (scmp_datum_t)arg->value;
+        cmp_array[i].datum_b = (scmp_datum_t)arg->value_two;
+    }
+
+    int rc = seccomp_rule_add_array(ctx, action, syscall_id, rule->args_count, cmp_array);
+    free(cmp_array);
+    return rc;
+}
 
 scmp_filter_ctx build_seccomp_context(const SeccompProfile *profile, const SeccompRuntimeContext *runtime_ctx) {
     if (profile == NULL || runtime_ctx == NULL)
         return NULL;
 
-    uint32_t default_action = map_action_string(profile->default_action,
-                                                  profile->default_errno_ret);
+    uint32_t default_action = map_action_string(profile->default_action, profile->default_errno_ret);
 
     scmp_filter_ctx ctx = seccomp_init(default_action);
     if (ctx == NULL) {
@@ -153,30 +350,32 @@ scmp_filter_ctx build_seccomp_context(const SeccompProfile *profile, const Secco
         return NULL;
     }
 
-    /* TODO: add architectures from profile->arch_map */
+    // architectures or profile->arch_map
     for (size_t i = 0; i < profile->arch_map_count; i++) {
         SeccompArchMap *map = &profile->arch_map[i];
 
         uint32_t arch = map_arch_string(map->architecture);
+        if (arch == SCMP_ARCH_NATIVE) {
+            fprintf(stderr, "Warning: architecture '%s' resolves to SCMP_ARCH_NATIVE "
+                            "(already the default); skipping\n", map->architecture);
+        }
         int rc = seccomp_arch_add(ctx, arch);
         if (rc != 0 && rc != -EEXIST) {
-            fprintf(stderr, "Error: seccomp_arch_add() failed for %s\n",
-                    map->architecture);
+            fprintf(stderr, "Error: seccomp_arch_add() failed for %s\n", map->architecture);
             goto fail;
         }
 
-        for (int j = 0; j < map->sub_arch_count; j++) {
+        for (size_t j = 0; j < map->sub_arch_count; j++) {
             uint32_t sub_arch = map_arch_string(map->sub_architectures[j]);
             rc = seccomp_arch_add(ctx, sub_arch);
             if (rc != 0 && rc != -EEXIST) {
-                fprintf(stderr, "Error: seccomp_arch_add() failed for sub-arch %s\n",
-                        map->sub_architectures[j]);
+                fprintf(stderr, "Error: seccomp_arch_add() failed for sub-arch %s\n", map->sub_architectures[j]);
                 goto fail;
             }
         }
     }
 
-    /* TODO: add syscall rules */
+    // syscall rules
     for (size_t i = 0; i < profile->syscalls_count; i++) {
         SeccompSyscallRule *rule = &profile->syscalls[i];
 
@@ -186,27 +385,22 @@ scmp_filter_ctx build_seccomp_context(const SeccompProfile *profile, const Secco
         for (size_t j = 0; j < rule->names_count; j++) {
             int syscall_id = seccomp_syscall_resolve_name(rule->names[j]);
             if (syscall_id == __NR_SCMP_ERROR) {
-                fprintf(stderr, "Warning: unknown syscall '%s', skipping\n",
-                        rule->names[j]);
-                continue; /* TODO: decide skip-vs-fail policy */
+                fprintf(stderr, "Warning: unknown syscall '%s', skipping\n", rule->names[j]);
+                continue;
             }
 
-            uint32_t action = resolve_rule_action(rule, syscall_id,
-                                                    profile->default_errno_ret);
+            uint32_t action = resolve_rule_action(rule, syscall_id, profile->default_errno_ret);
 
             int rc;
             if (rule->args_count > 0) {
-                /* TODO: build struct scmp_arg_cmp[] from rule->args using
-                 * map_cmp_op_string(), then call seccomp_rule_add_array() */
-                rc = 0; /* placeholder */
+                rc = add_arg_rule(ctx, action, syscall_id, rule);
             } else {
                 rc = seccomp_rule_add(ctx, action, syscall_id, 0);
             }
 
             if (rc != 0) {
-                fprintf(stderr, "Error: seccomp_rule_add() failed for '%s'\n",
-                        rule->names[j]);
-                goto fail; /* TODO: decide fail-fast vs skip-and-continue */
+                fprintf(stderr, "Error: seccomp_rule_add() failed for '%s'\n", rule->names[j]);
+                goto fail;
             }
         }
     }
