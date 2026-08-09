@@ -2,6 +2,8 @@ FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libseccomp2 \
+    binutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

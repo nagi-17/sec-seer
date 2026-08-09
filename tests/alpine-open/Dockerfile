@@ -4,7 +4,7 @@ FROM alpine:3.20
 # testing whether syscall-name-based profile matching holds up against a
 # different libc, since musl and glibc don't always map C functions to the
 # same underlying syscalls (e.g. open() vs openat() aliasing on some archs).
-RUN apk add --no-cache gcc musl-dev
+RUN apk add --no-cache gcc musl-dev libseccomp binutils
 
 WORKDIR /app
 COPY target.c .
