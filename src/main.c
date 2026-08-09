@@ -13,6 +13,7 @@
 #include <vector.h>
 #include "observer/observer.h"
 #include "policy-translator/json-deserializer/json-parser.h"
+#include "policy-translator/ctx-generator/ctx-build.h"
 
 #define OPTSTR "t:p:l:h"
 #define MAX_COMMAND_LEN 1024
@@ -90,9 +91,23 @@ int main(int argc, char *argv[], char *envp[]) {
         exit(EXIT_FAILURE);
     }
     
-    //code to fetch ctx from parsed json
-    //pass array of structs into libseccomp stuff
-    //returns ctx
+    // build the runtime context (kernel version, current arch, held caps)
+    // used by build_seccomp_context() to apply include/exclude filters
+    SeccompRuntimeContext runtime_ctx;
+    if (build_runtime_context(&runtime_ctx) < 0) {
+        free_profile(&profile);
+        exit(EXIT_FAILURE);
+    }
+
+    // code to fetch ctx from parsed json
+    // pass array of structs into libseccomp stuff
+    // returns ctx
+    scmp_filter_ctx seccomp_ctx = build_seccomp_context(&profile, &runtime_ctx);
+    if (seccomp_ctx == NULL) {
+        fprintf(stderr, "Error: failed to build seccomp context from profile.\n");
+        free_profile(&profile);
+        exit(EXIT_FAILURE);
+    }
 
     char **target_argv = split_command(target_binary);
 
@@ -115,6 +130,12 @@ int main(int argc, char *argv[], char *envp[]) {
         // TODO: load the seccomp context
 
         // code to load the context
+        if (seccomp_load(seccomp_ctx) < 0) {
+            perror("Error loading seccomp context");
+            _exit(EXIT_FAILURE);
+        }
+        seccomp_context_free(seccomp_ctx);
+
         if (execve(target_argv[0], target_argv, envp) < 0) {
             perror("Error starting target program[execve]");
             _exit(EXIT_FAILURE);
@@ -135,7 +156,8 @@ int main(int argc, char *argv[], char *envp[]) {
 
         observer_loop(pid, status, regs, logfile);
 
-cleanup:
+        free_profile(&profile);
+        free_runtime_context(&runtime_ctx);
         char** ptr = target_argv;
         while(*ptr) {
             free(*ptr);
