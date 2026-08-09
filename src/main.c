@@ -142,6 +142,15 @@ int main(int argc, char *argv[], char *envp[]) {
         };
     } 
     else if (pid > 0) {
+        char** ptr = target_argv;
+        while(*ptr) {
+            free(*ptr);
+            ptr++;
+        }
+        free(target_argv);
+        ptr = NULL;
+        target_argv = NULL;
+
         int status;
         struct user_regs_struct regs;
 
@@ -153,7 +162,6 @@ int main(int argc, char *argv[], char *envp[]) {
             kill(pid, SIGKILL);
             exit(EXIT_FAILURE);
         }
-
         observer_loop(pid, status, regs, logfile);
 
         free_profile(&profile);

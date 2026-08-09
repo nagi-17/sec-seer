@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <seccomp.h>
-#include "json-parser.h"
+#include <policy-translator/json-deserializer/json-parser.h>
 
 typedef struct {
     char *current_arch;
