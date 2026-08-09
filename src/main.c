@@ -126,10 +126,6 @@ int main(int argc, char *argv[], char *envp[]) {
         // this raise is to make sure parent has time to setup PTRACE_SETOPTIONS before child loads seccomp filter
         raise(SIGTRAP);
 
-        // TODO: fetch ctx from parsed json
-        // TODO: load the seccomp context
-
-        // code to load the context
         if (seccomp_load(seccomp_ctx) < 0) {
             perror("Error loading seccomp context");
             _exit(EXIT_FAILURE);
@@ -142,6 +138,8 @@ int main(int argc, char *argv[], char *envp[]) {
         };
     } 
     else if (pid > 0) {
+        free_profile(&profile);
+        free_runtime_context(&runtime_ctx);
         char** ptr = target_argv;
         while(*ptr) {
             free(*ptr);
@@ -162,18 +160,8 @@ int main(int argc, char *argv[], char *envp[]) {
             kill(pid, SIGKILL);
             exit(EXIT_FAILURE);
         }
+        
         observer_loop(pid, status, regs, logfile);
-
-        free_profile(&profile);
-        free_runtime_context(&runtime_ctx);
-        char** ptr = target_argv;
-        while(*ptr) {
-            free(*ptr);
-            ptr++;
-        }
-        free(target_argv);
-        ptr = NULL;
-        target_argv = NULL;
     }
 
     return 0;
