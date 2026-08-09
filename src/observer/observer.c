@@ -26,19 +26,51 @@ char* syscall_name_resolver(int syscall_num) {
 }
 
 addr2line_output* get_source_location(pid_t pid, unsigned long long rip) {
-    char exe_path[PATH_MAX];
-    char proc_path[64];
     addr2line_output* result = (addr2line_output*)calloc(1, sizeof(addr2line_output));
 
-    snprintf(proc_path, sizeof(proc_path), "/proc/%d/exe", pid);
-    ssize_t len = readlink(proc_path, exe_path, sizeof(exe_path) - 1);
-    if (len == -1) {
-        fprintf(stderr ,"Error: failed to read executable path\n");
+    // Parse /proc/<pid>/maps to find the executable mapping containing rip.
+    // This handles both the main binary (fixed base with -no-pie) and shared
+    // libraries (ASLR'd base, e.g. libc) -- the faulting syscall usually lives
+    // in the latter when the target calls a libc wrapper like read().
+    char maps_path[64];
+    snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+    FILE *maps = fopen(maps_path, "r");
+    if (maps == NULL) {
+        fprintf(stderr, "Error: failed to open %s\n", maps_path);
         return result;
     }
-    exe_path[len] = '\0';
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "addr2line -f -e %s 0x%llx", exe_path, rip);
+
+    char line[512];
+    unsigned long long base = 0;
+    char file[PATH_MAX] = "";
+    int found = 0;
+
+    while (fgets(line, sizeof(line), maps) != NULL) {
+        unsigned long long start, end;
+        char perms[5];
+        char path[PATH_MAX] = "";
+        if (sscanf(line, "%llx-%llx %4s %*llx %*s %*s %255s",
+                   &start, &end, perms, path) == 4) {
+            if (rip >= start && rip < end && strstr(perms, "x")) {
+                base = start;
+                snprintf(file, sizeof(file), "%s", path);
+                found = 1;
+                break;
+            }
+        }
+    }
+    fclose(maps);
+
+    if (!found) {
+        fprintf(stderr, "Error: no executable mapping contains 0x%llx\n", rip);
+        return result;
+    }
+
+    // addr2line wants the file offset, not the runtime address.
+    unsigned long long offset = rip - base;
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "addr2line -f -e %s 0x%llx", file, offset);
 
     FILE *fp = popen(cmd, "r");
     if (fp == NULL) {
@@ -69,11 +101,14 @@ static char* get_timestamp(void) {
     char* buf = (char *)calloc(64, 1);
     struct tm tm;
     localtime_r(&ts.tv_sec, &tm);
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+    char date[32];
+    strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", &tm);
+    snprintf(buf, 64, "%s.%03ld", date, ts.tv_nsec / 1000000);
     return buf;
 }
 
 void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* logfile) {
+    int first_in_array = 1;
     while (1) {
         if (ptrace(PTRACE_CONT, pid, 0, 0) < 0) {
             perror("Error continuing tracee");
@@ -130,7 +165,7 @@ void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* lo
 
             free(addr2line_info);
 
-            if (log_seccomp_violation(logfile, &sv) < 0) {
+            if (log_seccomp_violation(logfile, &sv, &first_in_array) < 0) {
                 fprintf(stderr, "Error: could not write json logs to file.\n");
             }
             
@@ -142,4 +177,7 @@ void observer_loop(pid_t pid, int status, struct user_regs_struct regs, char* lo
             //break;
         }
     }
+
+    /* Tracee exited or was killed; close the JSON array in the log. */
+    logger_close(logfile);
 }
