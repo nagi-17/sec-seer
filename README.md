@@ -89,6 +89,32 @@ Example:
 ./main --target "./target" --profile profile.json --log violations.json
 ```
 
+### Running inside Docker
+
+The product can be run as a container so the target binary runs in a clean, predictable environment. `--cap-add=SYS_PTRACE` is required for ptrace, and the profile and log paths are bind-mounted in so the container can read your policy and write violations back to your host:
+
+```sh
+docker run \
+  --cap-add=SYS_PTRACE \
+  -v /path/to/your/seccomp/profile.json:/profile.json \
+  -v /path/to/your/product/install:/secsee \
+  -v /path/to/your/log/file.json:/log.json \
+  --entrypoint /secsee \
+  connect-test \
+  -p /profile.json \
+  -l /log.json \
+  -t "/path/to/the/target/binary"
+```
+
+Replace each placeholder with your own paths:
+
+| Placeholder | Your value |
+| --- | --- |
+| `/path/to/your/seccomp/profile.json` | Your seccomp policy file defining which syscalls are banned |
+| `/path/to/your/product/install` | The directory where you installed the sec-seer binary |
+| `/path/to/your/log/file.json` | The file where you want violations logged as JSON |
+| `/path/to/the/target/binary` | The binary you want to run under the policy (the `-t` argument) |
+
 ### Policy format
 
 The profile is a Docker-style seccomp JSON document. The only mandatory field is `defaultAction`; `archMap`, `syscalls`, and per-rule `include`/`exclude` filters are optional. Actions and comparison operators use the `SCMP_ACT_*` / `SCMP_CMP_*` string constants.
