@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <parson.h>
 #include "json-parser.h"
-#include "parson.h"
 
 static char* safe_strdup(const char* src) {
     return src ? strdup(src) : NULL;
